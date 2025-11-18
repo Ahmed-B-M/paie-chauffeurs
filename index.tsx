@@ -8,7 +8,7 @@ declare global {
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Upload, DollarSign, Users, FileText, Calculator, AlertCircle, Trash2, Save, FileSpreadsheet } from 'lucide-react';
+import { Upload, DollarSign, Users, FileText, Calculator, AlertCircle, Trash2, Save, FileSpreadsheet, Loader2 } from 'lucide-react';
 
 // FIX: Define interfaces for the data structures to ensure type safety.
 interface CsvRow {
@@ -59,6 +59,7 @@ export default function App() {
 
   const [error, setError] = useState<string | null>(null);
   const [isSaved, setIsSaved] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Sauvegarde automatique
   useEffect(() => {
@@ -210,47 +211,55 @@ export default function App() {
       setError("La librairie Excel n'est pas encore chargée. Veuillez patienter et réessayer.");
       return;
     }
-
-    const header = ["Chauffeur", "Nb Tournées", "Montant Brut (€)", "Pénalités (€)", "Net à Payer (€)"];
     
-    const data = driverStats.map(stat => {
-      const grossPay = stat.tours * tourPrice;
-      const penalty = penalties[stat.name] || 0;
-      const netPay = grossPay - penalty;
-      return [stat.name, stat.tours, grossPay, penalty, netPay];
-    });
-    
-    const totalGross = totalTours * tourPrice;
-    const totalRow = ["TOTAL", totalTours, totalGross, totalPenalties, totalPayout];
+    setIsExporting(true);
+    try {
+        const header = ["Chauffeur", "Nb Tournées", "Montant Brut (€)", "Pénalités (€)", "Net à Payer (€)"];
+        
+        const data = driverStats.map(stat => {
+          const grossPay = stat.tours * tourPrice;
+          const penalty = penalties[stat.name] || 0;
+          const netPay = grossPay - penalty;
+          return [stat.name, stat.tours, grossPay, penalty, netPay];
+        });
+        
+        const totalGross = totalTours * tourPrice;
+        const totalRow = ["TOTAL", totalTours, totalGross, totalPenalties, totalPayout];
 
-    const finalData = [header, ...data, totalRow];
+        const finalData = [header, ...data, totalRow];
 
-    const ws = window.XLSX.utils.aoa_to_sheet(finalData);
+        const ws = window.XLSX.utils.aoa_to_sheet(finalData);
 
-    ws['!cols'] = [
-        { wch: 30 }, // Chauffeur
-        { wch: 15 }, // Nb Tournées
-        { wch: 15 }, // Montant Brut
-        { wch: 15 }, // Pénalités
-        { wch: 15 }  // Net à Payer
-    ];
+        ws['!cols'] = [
+            { wch: 30 }, // Chauffeur
+            { wch: 15 }, // Nb Tournées
+            { wch: 15 }, // Montant Brut
+            { wch: 15 }, // Pénalités
+            { wch: 15 }  // Net à Payer
+        ];
 
-    const currencyFormat = '#,##0.00" €"';
-    // Start from row 2 (index 1) to skip header. Loop through data rows + total row.
-    for (let i = 2; i <= data.length + 2; i++) {
-        const cellCRef = `C${i}`;
-        const cellDRef = `D${i}`;
-        const cellERef = `E${i}`;
-        if (ws[cellCRef]) { ws[cellCRef].t = 'n'; ws[cellCRef].z = currencyFormat; }
-        if (ws[cellDRef]) { ws[cellDRef].t = 'n'; ws[cellDRef].z = currencyFormat; }
-        if (ws[cellERef]) { ws[cellERef].t = 'n'; ws[cellERef].z = currencyFormat; }
+        const currencyFormat = '#,##0.00" €"';
+        // Start from row 2 (index 1) to skip header. Loop through data rows + total row.
+        for (let i = 2; i <= data.length + 2; i++) {
+            const cellCRef = `C${i}`;
+            const cellDRef = `D${i}`;
+            const cellERef = `E${i}`;
+            if (ws[cellCRef]) { ws[cellCRef].t = 'n'; ws[cellCRef].z = currencyFormat; }
+            if (ws[cellDRef]) { ws[cellDRef].t = 'n'; ws[cellDRef].z = currencyFormat; }
+            if (ws[cellERef]) { ws[cellERef].t = 'n'; ws[cellERef].z = currencyFormat; }
+        }
+
+        const wb = window.XLSX.utils.book_new();
+        window.XLSX.utils.book_append_sheet(wb, ws, "Résumé Paie");
+
+        const date = new Date().toISOString().slice(0, 10);
+        window.XLSX.writeFile(wb, `Resume_Paie_${date}.xlsx`);
+    } catch (e) {
+        console.error(e);
+        setError("Une erreur est survenue lors de la création du fichier Excel.");
+    } finally {
+        setIsExporting(false);
     }
-
-    const wb = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(wb, ws, "Résumé Paie");
-
-    const date = new Date().toISOString().slice(0, 10);
-    window.XLSX.writeFile(wb, `Resume_Paie_${date}.xlsx`);
   };
 
   return (
@@ -349,9 +358,20 @@ export default function App() {
                   </span>}
                   <button 
                       onClick={handleExport}
-                      className="text-sm px-3 py-1 bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors flex items-center gap-1"
+                      disabled={isExporting}
+                      className="text-sm px-3 py-1 bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                      <FileSpreadsheet className="w-3 h-3" /> Exporter
+                      {isExporting ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Exportation...
+                        </>
+                      ) : (
+                        <>
+                          <FileSpreadsheet className="w-3 h-3" />
+                          Exporter
+                        </>
+                      )}
                   </button>
                   <button 
                       onClick={handleReset}
